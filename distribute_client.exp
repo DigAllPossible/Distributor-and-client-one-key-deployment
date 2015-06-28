@@ -1,0 +1,63 @@
+#!/usr/bin/expect
+#Crate nomoral user,sudo cp,check success,by mr.zhou
+if { $argc != 6 } {
+ send_user "Usage: expect iplist rootpasswd newusername userpasswd timeout sshdport\n"
+ exit 1
+}
+
+set ip [lindex $argv 0]
+set rootpasswd [lindex $argv 1]
+set username [lindex $argv 2]
+set userpasswd [lindex $argv 3]
+set timeout [lindex $argv 4]
+set sshdport [lindex $argv 5]
+
+spawn /usr/bin/ssh -t -p $sshdport root@$ip "/usr/sbin/useradd $username&&/bin/echo $userpasswd|/usr/bin/passwd --stdin $username &>/dev/null"
+expect {
+       "yes/no" {send "yes\r";exp_continue}
+       "password:" {send "$rootpasswd\r"}
+}
+expect eof
+
+spawn /usr/bin/ssh-copy-id -i /home/$username/.ssh/id_dsa.pub "-p $sshdport $username@$ip"
+expect {
+       "yes/no" {send "yes\r";exp_continue}
+       "password:" {send "$userpasswd\r"}
+}
+expect eof
+
+spawn /bin/su - $username
+expect {
+       "$" {send "/usr/bin/scp -P$sshdport /tmp/sudo.sh $username@$ip:~ &>/dev/null\r"}
+}
+expect {
+       "yes/no" {send "yes\r"}
+}
+expect eof
+
+spawn /usr/bin/ssh -t -p $sshdport root@$ip "/bin/bash /home/$username/sudo.sh&&/bin/rm -f /home/$username/sudo.sh &>/dev/null"
+expect {
+       "yes/no" {send "yes\r";exp_continue}
+       "password:" {send "$rootpasswd\r"}
+}
+expect eof
+spawn /bin/su - $username
+expect {
+       "$" {send "/usr/bin/ssh -t -p $sshdport $username@$ip \"/bin/echo sucess>~/distribute.txt&&sudo cp ~/distribute.txt /root&&rm -f ~/distribute.txt\"\r"}
+}
+expect eof
+
+spawn /usr/bin/scp -P $sshdport root@$ip:~/distribute.txt /tmp/distribute_check_$ip
+expect {
+       "yes/no" {send "yes\r";exp_continue}
+       "password:" {send "$rootpasswd\r"}
+}
+expect eof
+spawn /usr/bin/ssh -t -p $sshdport root@$ip "/bin/rm -f ~/distribute.txt &>/dev/null"
+expect {
+       "yes/no" {send "yes\r";exp_continue}
+       "password:" {send "$rootpasswd\r"}
+}
+expect eof
+
+exit
